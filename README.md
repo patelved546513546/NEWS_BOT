@@ -96,15 +96,26 @@ CALLMEBOT_API_KEY=...
 3. Use build command: `pip install -r requirements.txt`
 4. Use start command: `python main.py`
 5. Set all required env vars in Render dashboard
-6. Verify `healthCheckPath` is `/health`
+6. Set `PYTHON_VERSION=3.11.9` in Render environment variables
+7. Verify `healthCheckPath` is `/health`
 
 ## Keep Free Service Awake
 
-Use UptimeRobot (or similar) to ping:
+This repo includes a GitHub Actions workflow at `.github/workflows/render-keepalive.yml`
+that sends an external visitor request every 10 minutes.
 
-`https://<your-render-service>.onrender.com/health`
+Setup steps:
 
-every 5 minutes.
+1. Open your GitHub repository settings
+2. Go to Secrets and variables, then Actions
+3. Add a new repository secret named `RENDER_HEALTHCHECK_URL`
+4. Set it to your Render URL, for example:
+
+	`https://your-service-name.onrender.com/health`
+
+5. Ensure GitHub Actions is enabled for the repository
+
+Optional: you can still use UptimeRobot as a backup monitor.
 
 ## Troubleshooting
 

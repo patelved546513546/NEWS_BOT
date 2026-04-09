@@ -42,4 +42,13 @@ class TelegramSender:
 
     def health_check(self):
         """Check if Telegram is configured"""
-        return bool(self.bot_token and self.chat_id)
+        if not self.bot_token or not self.chat_id:
+            return False
+
+        token = self.bot_token.strip().lower()
+        chat_id = self.chat_id.strip().lower()
+        invalid_markers = ["your_", "telegram_bot_token", "telegram_chat_id", "placeholder"]
+
+        return not any(marker in token for marker in invalid_markers) and not any(
+            marker in chat_id for marker in invalid_markers
+        )

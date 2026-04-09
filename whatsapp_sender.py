@@ -39,7 +39,16 @@ class WhatsAppSender:
 
     def health_check(self):
         """Check if WhatsApp is configured"""
-        return bool(self.phone_number and self.api_key)
+        if not self.phone_number or not self.api_key:
+            return False
+
+        phone = self.phone_number.strip().lower()
+        api_key = self.api_key.strip().lower()
+        invalid_markers = ["your_", "callmebot_key", "placeholder", "api_key"]
+
+        return not any(marker in phone for marker in invalid_markers) and not any(
+            marker in api_key for marker in invalid_markers
+        )
     
     def _send_message(self, message):
         encoded_message = urllib.parse.quote(message)
