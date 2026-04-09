@@ -5,6 +5,8 @@ import logging
 from config import Config
 from datetime import datetime
 import html
+import time
+import socket
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +22,11 @@ class EmailSender:
         self.recipients = [r.strip() for r in Config.EMAIL_RECIPIENTS if r.strip()]
 
         self.smtp_server = "smtp.gmail.com"
-        self.smtp_port = 587
+        self.smtp_port_tls = 587
+        self.smtp_port_ssl = 465
+        self.max_retries = 3
+        self.retry_backoff_seconds = 5
+        self.smtp_timeout_seconds = 30
 
         if self.sender_email and self.sender_password and self.recipients:
             logger.info(f"✅ Email initialized - {len(self.recipients)} recipient(s)")
@@ -34,26 +40,69 @@ class EmailSender:
             logger.error("❌ Email not configured!")
             return False
         
-        try:
-            msg = self._create_email(message)
+        msg = self._create_email(message)
 
-            with smtplib.SMTP(self.smtp_server, self.smtp_port) as server:
-                server.starttls()
-                server.login(self.sender_email, self.sender_password)
+        for attempt in range(1, self.max_retries + 1):
+            try:
+                sent_count = self._send_with_fallback_modes(msg)
 
-                for recipient in self.recipients:
-                    try:
-                        server.send_message(msg, to_addrs=[recipient])
-                        logger.info(f"✅ Email sent to {recipient}")
-                    except Exception as e:
-                        logger.error(f"❌ Failed for {recipient}: {e}")
+                if sent_count > 0:
+                    logger.info(f"✅ Email batch completed - {sent_count}/{len(self.recipients)} sent")
+                    return True
 
-            logger.info(f"✅ Email batch completed - {len(self.recipients)} sent")
-            return True
+                logger.error("❌ Email batch failed - no recipients were sent")
+            except (smtplib.SMTPException, OSError, socket.error) as exc:
+                logger.error(f"❌ Email attempt {attempt}/{self.max_retries} failed: {exc}")
 
-        except Exception as e:
-            logger.error(f"❌ Email error: {e}")
-            return False
+            if attempt < self.max_retries:
+                delay = self.retry_backoff_seconds * attempt
+                logger.warning(f"⚠️ Retrying email in {delay}s...")
+                time.sleep(delay)
+
+        logger.error("❌ Email failed after retries")
+        return False
+
+    def _send_with_fallback_modes(self, msg):
+        """Try STARTTLS first, then SSL as fallback."""
+        sent_count = self._send_with_starttls(msg)
+        if sent_count > 0:
+            return sent_count
+
+        logger.warning("⚠️ STARTTLS send failed, trying SMTP SSL fallback...")
+        return self._send_with_ssl(msg)
+
+    def _send_with_starttls(self, msg):
+        sent_count = 0
+        with smtplib.SMTP(self.smtp_server, self.smtp_port_tls, timeout=self.smtp_timeout_seconds) as server:
+            server.ehlo()
+            server.starttls()
+            server.ehlo()
+            server.login(self.sender_email, self.sender_password)
+
+            for recipient in self.recipients:
+                try:
+                    server.send_message(msg, to_addrs=[recipient])
+                    logger.info(f"✅ Email sent to {recipient}")
+                    sent_count += 1
+                except Exception as exc:
+                    logger.error(f"❌ Failed for {recipient}: {exc}")
+
+        return sent_count
+
+    def _send_with_ssl(self, msg):
+        sent_count = 0
+        with smtplib.SMTP_SSL(self.smtp_server, self.smtp_port_ssl, timeout=self.smtp_timeout_seconds) as server:
+            server.login(self.sender_email, self.sender_password)
+
+            for recipient in self.recipients:
+                try:
+                    server.send_message(msg, to_addrs=[recipient])
+                    logger.info(f"✅ Email sent to {recipient}")
+                    sent_count += 1
+                except Exception as exc:
+                    logger.error(f"❌ Failed for {recipient}: {exc}")
+
+        return sent_count
     
     def _create_email(self, message):
         """Create formatted email"""
