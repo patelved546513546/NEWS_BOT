@@ -14,6 +14,10 @@ class Config:
     GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD")
     EMAIL_RECIPIENTS = os.getenv("EMAIL_RECIPIENTS", "").split(",")
 
+    # Optional: HTTPS email provider (recommended on Render if SMTP is blocked)
+    RESEND_API_KEY = os.getenv("RESEND_API_KEY")
+    RESEND_FROM_EMAIL = os.getenv("RESEND_FROM_EMAIL")
+
     # AI Settings
     GROQ_API_KEY = os.getenv("GROQ_API_KEY")
     GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
@@ -93,13 +97,19 @@ class Config:
 
     @classmethod
     def validate(cls):
+        email_provider_ok = (
+            bool(cls.GMAIL_ADDRESS and cls.GMAIL_APP_PASSWORD)
+            or bool(cls.RESEND_API_KEY and cls.RESEND_FROM_EMAIL)
+        )
+
         required = [
-            ("GMAIL_ADDRESS", cls.GMAIL_ADDRESS),
-            ("GMAIL_APP_PASSWORD", cls.GMAIL_APP_PASSWORD),
             ("GROQ_API_KEY", cls.GROQ_API_KEY),
         ]
 
         missing = [name for name, value in required if not value]
+        if not email_provider_ok:
+            missing.append("EMAIL_PROVIDER(GMAIL_* or RESEND_*)")
+
         if missing:
             raise ValueError(f"Missing config: {', '.join(missing)}")
 

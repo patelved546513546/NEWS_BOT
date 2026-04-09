@@ -16,6 +16,10 @@ services:
         sync: false
       - key: EMAIL_RECIPIENTS
         sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: RESEND_FROM_EMAIL
+        sync: false
       - key: GROQ_API_KEY
         sync: false
       - key: UPDATE_INTERVAL_MINUTES
