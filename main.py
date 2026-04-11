@@ -8,6 +8,7 @@ from ai_processor import AIProcessor
 from email_sender import EmailSender
 from telegram_sender import TelegramSender
 from whatsapp_sender import WhatsAppSender
+from pdf_generator import PDFGenerator
 from config import Config
 from flask import Flask, jsonify
 from threading import Thread
@@ -90,6 +91,7 @@ class NewsBot:
         self.email = EmailSender()
         self.telegram = TelegramSender()
         self.whatsapp = WhatsAppSender()
+        self.pdf = PDFGenerator(output_dir="logs")
         self.running = True
         self.error_count = 0
         
@@ -140,6 +142,52 @@ class NewsBot:
             logger.error(f"💥 Error: {e}")
             self.error_count += 1
             bot_status["errors"] += 1
+
+    def send_daily_pdf_digest(self):
+        """Send one precise 24h digest as a PDF attachment."""
+        global bot_status
+
+        try:
+            logger.info("📄 Starting daily PDF digest...")
+            bot_status["status"] = "digesting"
+
+            news = self.fetcher.get_news_for_window(
+                hours=Config.DAILY_DIGEST_HOURS,
+                max_articles=Config.DAILY_DIGEST_MAX_ARTICLES,
+                entries_per_feed=20,
+            )
+
+            if not news:
+                logger.warning("⚠️ No news found for daily digest")
+                return
+
+            digest_text = self.ai.summarize_daily_digest(news)
+            pdf_path = self.pdf.create_daily_digest_pdf(digest_text, category=Config.NEWS_CATEGORY)
+
+            subject = f"📰 Daily News PDF Digest - {datetime.now().strftime('%d %b %Y')}"
+            intro = (
+                f"Attached is your 24-hour news digest PDF for category: {Config.NEWS_CATEGORY}.\n\n"
+                f"Articles analyzed: {len(news)}\n"
+                f"Window: last {Config.DAILY_DIGEST_HOURS} hours"
+            )
+
+            success = self.email.send_news(intro, subject=subject, attachment_path=pdf_path)
+
+            bot_status["total_updates"] += 1
+            bot_status["last_update"] = datetime.now().isoformat()
+
+            if success:
+                self.error_count = 0
+                bot_status["status"] = "running"
+                logger.info("✅ Daily PDF digest sent")
+            else:
+                self.error_count += 1
+                bot_status["errors"] += 1
+
+        except Exception as e:
+            logger.error(f"💥 Daily digest error: {e}")
+            self.error_count += 1
+            bot_status["errors"] += 1
     
     def graceful_shutdown(self, signum, frame):
         logger.info("🛑 Shutting down...")
@@ -153,6 +201,7 @@ class NewsBot:
 
         logger.info("🤖 News Bot Starting...")
         logger.info(f"⏰ Update interval: {Config.UPDATE_INTERVAL} minutes")
+        logger.info(f"📦 Delivery mode: {Config.DELIVERY_MODE}")
 
         if not self.email.health_check():
             logger.warning("⚠️ Email sender not fully configured. Bot may not deliver alerts.")
@@ -166,9 +215,13 @@ class NewsBot:
         if self.email.health_check():
             self.email.send_startup_notification()
 
-        self.send_news_update()
-
-        schedule.every(Config.UPDATE_INTERVAL).minutes.do(self.send_news_update)
+        if Config.DELIVERY_MODE == "daily_pdf":
+            schedule.every().day.at(Config.DIGEST_SEND_TIME).do(self.send_daily_pdf_digest)
+            logger.info(f"📄 Daily PDF digest scheduled at {Config.DIGEST_SEND_TIME}")
+            self.send_daily_pdf_digest()
+        else:
+            self.send_news_update()
+            schedule.every(Config.UPDATE_INTERVAL).minutes.do(self.send_news_update)
 
         bot_status["status"] = "running"
 

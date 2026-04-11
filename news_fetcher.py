@@ -15,16 +15,26 @@ class NewsFetcher:
         self.stock_regions = getattr(Config, "STOCK_REGIONS", ["india", "us"])
         
     def get_latest_news(self, max_articles=5):
+        return self.get_news_for_window(
+            hours=4,
+            max_articles=max_articles,
+            entries_per_feed=3,
+        )
+
+    def get_news_for_window(self, hours=24, max_articles=40, entries_per_feed=10):
         all_news = []
 
-        logger.info(f"📰 Fetching '{self.category}' news from {len(self.rss_feeds)} sources...")
+        logger.info(
+            f"📰 Fetching '{self.category}' news from {len(self.rss_feeds)} sources "
+            f"for last {hours}h..."
+        )
         
         for feed_url in self.rss_feeds:
             try:
                 feed = feedparser.parse(feed_url)
                 source_name = self._get_source_name(feed, feed_url)
                 
-                for entry in feed.entries[:3]:
+                for entry in feed.entries[:entries_per_feed]:
                     try:
                         article = {
                             'title': self._clean_text(entry.title),
@@ -49,7 +59,7 @@ class NewsFetcher:
         
         unique_news = self._remove_duplicates(all_news)
         unique_news.sort(key=lambda x: x['published'], reverse=True)
-        recent_news = self._filter_recent(unique_news, hours=4)
+        recent_news = self._filter_recent(unique_news, hours=hours)
         
         logger.info(f"📊 Total: {len(all_news)}, Unique: {len(unique_news)}, Recent: {len(recent_news)}")
         

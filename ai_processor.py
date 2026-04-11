@@ -51,6 +51,64 @@ class AIProcessor:
 
         logger.error(f"❌ AI failed for all models: {', '.join(tried)}")
         return self._fallback_format(news_articles, current_time)
+
+    def summarize_daily_digest(self, news_articles):
+        """Generate a concise daily digest suitable for PDF export."""
+        if not news_articles:
+            current_time = datetime.now(self.timezone).strftime("%d %B %Y")
+            return f"Daily News Digest - {current_time}\n\nNo significant news was collected in the last 24 hours."
+
+        current_time = datetime.now(self.timezone).strftime("%d %B %Y")
+        news_text = self._format_news_for_ai(news_articles)
+        prompt = f"""Create a precise 24-hour news digest from these items.
+
+RULES:
+- Keep it factual and concise
+- Organize in sections: Top Stories, Markets, Policy/Economy, Geopolitics, Technology
+- Include 8-15 bullet points total
+- Each bullet should be one line
+- No URLs
+- End with 3-line "What to watch next" section
+
+DATE: {current_time}
+
+NEWS:
+{news_text}
+"""
+
+        tried = []
+        candidate_models = [self.model] + [m for m in self.fallback_models if m != self.model]
+
+        for model_name in candidate_models:
+            tried.append(model_name)
+            try:
+                response = self.client.chat.completions.create(
+                    model=model_name,
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": "You are an editor writing a professional daily digest for investors and general readers.",
+                        },
+                        {"role": "user", "content": prompt},
+                    ],
+                    temperature=0.4,
+                    max_tokens=1200,
+                )
+                digest = response.choices[0].message.content
+                logger.info(f"✅ AI daily digest generated with model: {model_name}")
+                return digest
+            except Exception as exc:
+                logger.warning(f"⚠️ Daily digest model failed ({model_name}): {exc}")
+
+        logger.error(f"❌ Daily digest failed for all models: {', '.join(tried)}")
+        return self._fallback_daily_digest(news_articles, current_time)
+
+    def _fallback_daily_digest(self, articles, current_date):
+        lines = [f"Daily News Digest - {current_date}", "", "Top Stories"]
+        for idx, article in enumerate(articles[:12], 1):
+            lines.append(f"{idx}. {article['title']} ({article['source']})")
+        lines.extend(["", "What to watch next", "- Policy signals", "- Market reaction", "- Geopolitical follow-through"])
+        return "\n".join(lines)
     
     def _format_news_for_ai(self, articles):
         formatted = []

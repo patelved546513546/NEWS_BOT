@@ -25,6 +25,10 @@ class Config:
     # Bot Settings
     UPDATE_INTERVAL = int(os.getenv("UPDATE_INTERVAL_MINUTES", 15))
     MAX_ARTICLES = int(os.getenv("MAX_NEWS_ARTICLES", 5))
+    DELIVERY_MODE = os.getenv("DELIVERY_MODE", "interval").strip().lower()
+    DIGEST_SEND_TIME = os.getenv("DIGEST_SEND_TIME", "20:00").strip()
+    DAILY_DIGEST_HOURS = int(os.getenv("DAILY_DIGEST_HOURS", 24))
+    DAILY_DIGEST_MAX_ARTICLES = int(os.getenv("DAILY_DIGEST_MAX_ARTICLES", 40))
     TIMEZONE = os.getenv("TIMEZONE", "UTC")
     PORT = int(os.getenv("PORT", 8080))
     NEWS_CATEGORY = os.getenv("NEWS_CATEGORY", "world").strip().lower()

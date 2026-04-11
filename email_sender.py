@@ -1,6 +1,8 @@
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from email.mime.base import MIMEBase
+from email import encoders
 import logging
 from config import Config
 from datetime import datetime
@@ -8,6 +10,8 @@ import html
 import time
 import socket
 import requests
+import base64
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +40,7 @@ class EmailSender:
         else:
             logger.error("❌ Email credentials missing!")
     
-    def send_news(self, message):
+    def send_news(self, message, subject=None, attachment_path=None):
         """Send email to all recipients"""
 
         if not self.recipients:
@@ -45,7 +49,7 @@ class EmailSender:
 
         # Prefer HTTPS provider on restricted platforms like Render.
         if self._has_resend_provider():
-            if self._send_with_resend(message):
+            if self._send_with_resend(message, subject=subject, attachment_path=attachment_path):
                 return True
             logger.warning("⚠️ Resend failed, trying SMTP fallback...")
 
@@ -53,7 +57,7 @@ class EmailSender:
             logger.error("❌ No SMTP provider configured for fallback")
             return False
         
-        msg = self._create_email(message)
+        msg = self._create_email(message, subject=subject, attachment_path=attachment_path)
 
         for attempt in range(1, self.max_retries + 1):
             try:
@@ -84,16 +88,28 @@ class EmailSender:
     def _has_resend_provider(self):
         return bool(self.resend_api_key and self.resend_from_email)
 
-    def _send_with_resend(self, message):
+    def _send_with_resend(self, message, subject=None, attachment_path=None):
         """Send using Resend API over HTTPS (port 443)."""
         try:
             payload = {
                 "from": self.resend_from_email,
                 "to": self.recipients,
-                "subject": f"📰 Breaking News - {datetime.now().strftime('%I:%M %p')}",
+                "subject": subject or f"📰 Breaking News - {datetime.now().strftime('%I:%M %p')}",
                 "text": message,
                 "html": self._convert_to_html(message),
             }
+
+            if attachment_path:
+                path_obj = Path(attachment_path)
+                if path_obj.exists():
+                    encoded = base64.b64encode(path_obj.read_bytes()).decode("utf-8")
+                    payload["attachments"] = [
+                        {
+                            "filename": path_obj.name,
+                            "content": encoded,
+                        }
+                    ]
+
             headers = {
                 "Authorization": f"Bearer {self.resend_api_key}",
                 "Content-Type": "application/json",
@@ -158,10 +174,10 @@ class EmailSender:
 
         return sent_count
     
-    def _create_email(self, message):
+    def _create_email(self, message, subject=None, attachment_path=None):
         """Create formatted email"""
         msg = MIMEMultipart('alternative')
-        msg['Subject'] = f"📰 Breaking News - {datetime.now().strftime('%I:%M %p')}"
+        msg['Subject'] = subject or f"📰 Breaking News - {datetime.now().strftime('%I:%M %p')}"
         msg['From'] = f"News Bot <{self.sender_email}>"
         msg['To'] = ", ".join(self.recipients)
 
@@ -170,6 +186,16 @@ class EmailSender:
 
         msg.attach(part1)
         msg.attach(part2)
+
+        if attachment_path:
+            path_obj = Path(attachment_path)
+            if path_obj.exists():
+                with path_obj.open("rb") as handle:
+                    part = MIMEBase("application", "octet-stream")
+                    part.set_payload(handle.read())
+                encoders.encode_base64(part)
+                part.add_header("Content-Disposition", f"attachment; filename={path_obj.name}")
+                msg.attach(part)
 
         return msg
     
