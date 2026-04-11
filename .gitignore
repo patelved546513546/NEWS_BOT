@@ -20,6 +20,7 @@ ENV/
 # Logs
 *.log
 logs/*.log
+logs/*.pdf
 
 # IDE
 .vscode/
